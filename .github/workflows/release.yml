@@ -1,0 +1,35 @@
+name: release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      # Build a linux binary per arch and tar it as
+      # system-information_<tag>_linux_<arch>.tar.gz, the layout konfig-state's
+      # archive resource fetches (binary named system-information inside).
+      - name: build release tarballs
+        run: |
+          mkdir -p dist
+          commit=$(git rev-parse --short HEAD)
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build \
+              -ldflags="-s -w -X main.version=${GITHUB_REF_NAME} -X main.commit=${commit}" \
+              -o system-information ./cmd/system-information
+            tar czf "dist/system-information_${GITHUB_REF_NAME}_linux_${arch}.tar.gz" system-information
+            rm system-information
+          done
+      - name: publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz --clobber
